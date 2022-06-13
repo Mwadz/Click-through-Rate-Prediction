@@ -1,0 +1,572 @@
+---
+title: 'Independent Project: Data Cleaning, EDA and K-means Clustering using R'
+author: "Cynthia Mwadime"
+date: "May 27, 2022"
+output: pdf_document
+---
+#1. Defining the Question
+
+##a) Objective
+``` To create a model that will consistently and accurately identify which individuals are most likely to click on ads.```
+##b) Defining the metric of success
+```The model will be considered a success when it is able to consistently and accurately predict the target variable with an accuracy of 85% - 95%. The range ensures we have a well performing model while also avoiding overfitting.```
+##c) Understanding the context
+```A Kenyan entrepreneur has created an online cryptography course and would want to advertise it on her blog. She currently targets audiences originating from various countries. In the past, she ran ads to advertise a related course on the same blog and collected data in the process. She would now like to employ my services as a Data Science Consultant to help her identify which individuals are most likely to click on her ads.```
+##d) Recording the experimental design
+```The process will entail:```
+* Defining the question, the metric for success, the context, experimental design taken.
+* Reading and explore the given dataset.
+* Defining the appropriateness of the available data to answer the given question.
+* Finding and deal with outliers, anomalies, and missing data within the dataset.
+* Performing univariate and bivariate analysis recording my observations.
+* Implementing the solution.
+* Challenging the solution.
+* Follow up questions.
+##e) Data Relevance
+``` The appropriate dataset for this project is one that contains data  on the characteristics of the individuals who read the client's blogs.Its appropriateness will be measured against the metrics of success. The following are the descriptions of the columns contained in the dataset:```
+* Daily Time Spent on Site: Time (in minutes) that the individual spent on the site
+* Age: Individuals's age in years
+* Area Income: Average income of geographical area of the individual
+* Daily Internet Usage: Time (in minutes) that the individual spent on the internet 
+* Ad Topic Line: Headline of the advertisement
+* City: The individuals's city
+* Male: Whether or not the individual was male (1=yes, 0=no)
+* Country: The individuals's country
+* Timestamp: Date and time the individual visited the site
+* Clicked on Ad: Whether or not the individual clicked on an ad (1=yes, 0=no)
+```[Advertising dataset](http://bit.ly/IPAdvertisingData)```
+# 2. Reading the Data
+
+```{r, echo=FALSE}
+library(tidyverse)
+library(readr)
+library(ROCR)
+library(PerformanceAnalytics)
+library(e1071)
+library(caret)
+library(gbm)
+library(corrplot)
+library(ggcorrplot)
+library(MASS)
+library(rpart)
+library(caTools)
+library(naivebayes)
+library(class)
+library(ISLR)
+library(glmnet)
+library(Hmisc)
+library(funModeling)
+library(pROC)
+library(randomForest)
+library(klaR)
+library(scales)
+library(cluster)
+library(factoextra)
+library(DataExplorer)
+library(ClustOfVar)
+library(GGally)
+```
+
+
+```{r}
+# Loading our data set
+advertising <- read.csv("http://bit.ly/IPAdvertisingData")
+```
+
+#3. Checking the data
+```{r}
+# Viewing the top 6 entries
+head(advertising)
+#viewing the whole data set
+#View(advertising)
+#Data types of the columns
+str(advertising)
+#Statistical summary of the data set
+summary(advertising)
+#checking the number of entries and attributes
+dim(advertising)
+#checking the class of our object
+class(advertising)
+```
+#4. Tidying the data/ Data Cleaning
+
+```*Checking for missing data*```
+```{r}
+#Data completeness
+#Checking for missing data
+colSums(is.na(advertising))
+```
+```There are no missing values in our data set.```
+```*Checking for duplicates*```
+```{r}
+#Data consistency
+duplicated.rows <- advertising[duplicated(advertising),]
+duplicated.rows
+```
+```{r}
+anyDuplicated(advertising)
+```
+```There is no duplicated data in our dataset```
+```{r}
+#Changing the male dt
+advertising$Male <- as.factor(advertising$Male)
+head(advertising)
+```
+```{r}
+#coverting clicked on ad column to factor
+advertising$Clicked.on.Ad <- as.factor(advertising$Clicked.on.Ad)
+str(advertising)
+```
+```{r}
+#converting timestamp column to datetime
+library('lubridate')
+library('dplyr')
+advertising %>%
+  mutate_all(type.convert)%>%
+  mutate_if(is.factor, as.character)%>%
+  mutate(Timestamp= as_datetime(Timestamp, tz=Sys.timezone()))
+```
+
+```{r}
+#extracting the year, month and day from the timestamp column
+advertising$Year <- format(as.POSIXct(advertising$Timestamp, format='%Y-%m-%d %H:%M:%S'), '%Y')
+advertising$Month <- format(as.POSIXct(advertising$Timestamp, format= '%Y-%m-%d %H:%M:%S'), '%m')
+advertising$Day <- format(as.POSIXct(advertising$Timestamp, format= '%Y-%m-%d %H:%M:%S'), '%d')
+advertising$Hour <- format(as.POSIXct(advertising$Timestamp, format= '%Y-%m-%d %H:%M:%S'), '%H')
+head(advertising)
+colSums(is.na(advertising))
+```
+
+```{r}
+#dropping the timestamp column
+advertising$Timestamp <-NULL
+head(advertising)
+```
+```{r, echo=TRUE}
+# Removing duplicates from all columns
+advsertising = advertising[!duplicated(advertising), ]
+```
+
+```{r}
+#convert the year, month, day, hour columns to factor
+advertising$Year <- as.factor(advertising$Year)
+advertising$Month <- as.factor(advertising$Month)
+advertising$Day <- as.factor(advertising$Day)
+advertising$Hour <- as.factor(advertising$Hour)
+str(advertising)
+```
+
+```*Checking for outliers*```
+```{r}
+#Create a list of numeric columns
+num.cols <- list(advertising$Daily.Time.Spent.on.Site,advertising$Age,
+advertising$Area.Income,advertising$Daily.Internet.Usage)
+#Checking for outliers
+boxplot(num.cols, names=c('Daily.Time.Spent.on.Site', 'Age', 'Area.Income', 'Daily.Internet.Usage'), main='Boxplots to show Outliers', las=2)
+#Listing the outliers
+boxplot.stats(advertising$Area.Income)$out
+```
+```{r}
+#Plotting boxplots of individual columns so it's easier to observe
+boxplot(advertising$Daily.Time.Spent.on.Site, main='Boxplot of Daily time spent on site', xlab='Daily Time spent on the site', ylab='value')
+boxplot(advertising$Age, main='Boxplot of age', xlab='Age', ylab='Value')
+boxplot(advertising$Area.Income, main='Boxplot of area income', xlab='Area income', ylab='Value')
+boxplot(advertising$Daily.Internet.Usage, main='Boxplot of Daily Internet Usage', xlab='Daily Internet Usage', ylab='Value')
+ 
+```
+```The outliers in area income might be due to low numbers of ad clicks so no need to remove them.```
+``` {r, echo=TRUE}
+# checking the percentage of missing values for all variables
+plot_missing(advertising)
+```
+#5 Univariate Exploratory Data Analysis
+## Measures of Central Tendancy
+```{r}
+#Finding the mean
+mean <- colMeans(advertising[sapply(advertising, is.numeric)])
+print(mean)
+#Finding the median
+#loading the tidyverse and robustbase(for the colMedians function) libraries
+library(robustbase)
+library(tidyverse)
+median <- advertising%>%
+  select_if(is.numeric) %>%
+  as.matrix()%>%
+  colMedians()
+print(median)
+#Finding the mode
+#mode <- function(x) {
+ # uniq_data <- unique(x)
+  #map_data <- match(x, uniq_data)
+  #tab_data <- tabulate(map_data)
+ # max_val <- max(tab_data)
+  #uniq_data[tab_data == max_val]
+#}
+mode <- function(v) {
+   uniqv <- unique(v)
+   uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+mode(advertising$Daily.Time.Spent.on.Site)
+mode(advertising$Age)
+mode(advertising$Area.Income)
+mode(advertising$Daily.Internet.Usage)
+mode(advertising$Ad.Topic.Line)
+mode(advertising$City)
+mode(advertising$Gender)
+mode(advertising$Country)
+mode(advertising$Year)
+mode(advertising$Month)
+mode(advertising$Day)
+mode(advertising$Hour)
+mode(advertising$Clicked.on.Ad)
+```
+``` Mean:
+Daily time spent on site- 68.215 minutes
+Age- 35years
+area income- 57012.3
+Daily internet usage- 183.13 minutes
+```
+## Measures of Dispersion
+```{r}
+#Finding the minimum
+num.cols <- list(advertising$Daily.Time.Spent.on.Site,advertising$Age,
+advertising$Area.Income,advertising$Daily.Internet.Usage)
+min(advertising$Daily.Time.Spent.on.Site)
+min(advertising$Age)
+min(advertising$Area.Income)
+min(advertising$Daily.Internet.Usage)
+
+#Finding the maximum
+max(advertising$Daily.Time.Spent.on.Site)
+max(advertising$Age)
+max(advertising$Area.Income)
+max(advertising$Daily.Internet.Usage)
+
+#Finding the Range
+range(advertising$Daily.Time.Spent.on.Site)
+range(advertising$Age)
+range(advertising$Area.Income)
+range(advertising$Daily.Internet.Usage)
+
+#Finding the quantiles
+quantile(advertising$Daily.Time.Spent.on.Site)
+quantile(advertising$Age)
+quantile(advertising$Area.Income)
+quantile(advertising$Daily.Internet.Usage)
+
+#Finding the variance
+var(advertising$Daily.Time.Spent.on.Site)
+var(advertising$Age)
+var(advertising$Area.Income)
+
+#Finding the Standard Deviation
+sd(advertising$Daily.Time.Spent.on.Site)
+sd(advertising$Age)
+sd(advertising$Area.Income)
+sd(advertising$Daily.Internet.Usage)
+
+#Finding skewness
+skewness(advertising$Daily.Time.Spent.on.Site)
+skewness(advertising$Age)
+skewness(advertising$Area.Income)
+skewness(advertising$Daily.Internet.Usage)
+
+#Finding Kurtosis
+kurtosis(advertising$Daily.Time.Spent.on.Site)
+kurtosis(advertising$Age)
+kurtosis(advertising$Area.Income)
+kurtosis(advertising$Daily.Internet.Usage)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r echo=TRUE}
+#renaming dataframe
+IPAdvertisingData <- advertising
+# plotting
+ggplot(IPAdvertisingData) +
+  aes(x = "", y = Daily.Time.Spent.on.Site) +
+  geom_boxplot(fill = "#FFB6C1") +
+  theme_minimal()
+```
+
+
+
+```{r echo=TRUE}
+# Daily time pent on the site comparison by gender
+IPAdvertisingData %>%
+  ggplot(aes(x=Male,y=Daily.Time.Spent.on.Site))+
+  geom_boxplot(fill='lightblue')+
+  xlab("Sex")+
+  ylab("Daily time spent on site")+
+  facet_grid(~Clicked.on.Ad)
+```
+
+```{r}
+#comparison of month and clicked on ad
+
+month_frequency <- table(IPAdvertisingData$Month)
+#plotting bar chart of months column
+options(repr.plot.width = 10, repr.plot.height = 10)
+barplot(c(month_frequency), main="Month frequency.",
+        xlab="month",
+        ylab="frequency",
+        cex.main=2, cex.lab=1.7,cex.sub=1.2,
+        width=c(30,30),
+        col=c("violet"))
+```
+```{r echo=TRUE}
+# Converting 0,1 to Female, Male so visualization's better
+IPAdvertisingData <- IPAdvertisingData %>% 
+  mutate(Clicked.on.Ad = if_else(Clicked.on.Ad == 1, "CLICKED", "NOT_CLICKED"))
+```
+
+```{r echo=TRUE}
+# Daily time pent on the site comparison by gender and age
+IPAdvertisingData %>%
+  ggplot(aes(x=Male,y=Daily.Time.Spent.on.Site, group=Male))+
+  geom_boxplot(fill='pink')+
+  xlab("Sex")+
+  ylab("Daily time spent on site")+
+  facet_grid(~Clicked.on.Ad)
+```
+
+
+```{r echo=TRUE}
+# Counting the age distribution
+IPAdvertisingData %>% 
+  group_by(Age) %>% 
+  count() %>% 
+  filter(n > 10) %>% 
+  ggplot()+
+  geom_col(aes(Age, n), fill = "lightblue")+
+  ggtitle("Age Distribution") +
+  xlab("Age")  +
+  ylab("Age Count")
+```
+
+```{r echo=TRUE}
+# bivariate analsis on Age, Gender and Daily internet Usage
+IPAdvertisingData %>%
+  ggplot(aes(x=Age,y=Daily.Internet.Usage,color=Male, size=Daily.Internet.Usage))+
+  geom_point(alpha=0.7)+xlab("Age") +
+  ylab("Daily Internet Usage")+
+  guides(fill = guide_legend(title = "Gender"))
+```
+```gender seems to be a neutral feature when it comes to daily internet usage unlike age```
+```{r echo=TRUE}
+corr <- cor(IPAdvertisingData%>% select_if(is.numeric))
+corr
+#corrplot(corr, method = "ellipse", type="upper",)
+```
+
+```{r echo=TRUE}
+p.mat <- cor_pmat(corr, method = "spearman")
+ggcorrplot(corr, method = "square", type = "upper", 
+           colors = c("#6D9EC1", "white", "#E46726"), 
+           lab = TRUE, p.mat=p.mat, sig.level = .05)
+```
+``` Daily internet usage and daily time spent on site are positively correlated while age and daily internet usage are negatively correlated```
+
+```{r echo=TRUE}
+ggplot(IPAdvertisingData, aes(x = Age, y = Daily.Internet.Usage, color = Clicked.on.Ad, shape = Clicked.on.Ad))+
+  geom_point()+
+  geom_smooth(se = FALSE);
+```
+**Observations:**
+``` majority of the people who actualy clicked on the ad had a surprisingly low daily internet usage and most were above the age of 40```
+```{r echo=TRUE}
+ggplot(IPAdvertisingData, aes(x = Age, y = Daily.Time.Spent.on.Site, color = Clicked.on.Ad, shape = Clicked.on.Ad))+
+  geom_point()+
+  geom_smooth(se = FALSE);
+```
+#7. Modeling
+
+### Feature Engineering
+
+```{r}
+advertising<-IPAdvertisingData
+head(advertising)
+```
+```{r}
+#dropping the year, country, city and ad topic line columns
+advertising$Ad.Topic.Line <- NULL
+advertising$City <- NULL
+advertising$Country <- NULL
+advertising$Year <- NULL
+head(advertising)
+```
+```{r}
+advertising[,7:9] <- sapply(advertising[,7:9], as.character)
+advertising[,7:9] <- sapply(advertising[,7:9], as.numeric)
+head(advertising)
+advertising$Male <- as.numeric(as.character(advertising$Male))
+head(advertising)
+```
+
+```{r}
+# Normalizing the dataset so that no particular attribute 
+# has more impact on modeling algorithm than others.
+normalize <- function(x){
+  return ((x-min(x)) / (max(x)-min(x)))
+}
+#data$Age<- normalize(data$Age)
+advertising$Area.Income<- normalize(advertising$Area.Income)
+advertising$Daily.Internet.Usage<- normalize(advertising$Daily.Internet.Usage)
+advertising$Daily.Time.Spent.on.Site<- normalize(advertising$Daily.Time.Spent.on.Site)
+advertising$Day<- normalize(advertising$Day)
+advertising$Male<- normalize(advertising$Male)
+advertising$Month<- normalize(advertising$Month)
+advertising$Hour<- normalize(advertising$Hour)
+advertising$Age<- normalize(advertising$Age)
+head(advertising)
+advertising$Geder <- NULL
+head(advertising)
+```
+### Decision Trees
+```{r}
+ 
+#Loading libraries
+library(rpart,quietly = TRUE)
+library(caret,quietly = TRUE)
+library(rpart.plot,quietly = TRUE)
+library(rattle)
+#data splicing
+set.seed(123)
+train <- sample(1:nrow(advertising),size = ceiling(0.80*nrow(advertising)),replace = FALSE)
+# training set
+ad_train <- advertising[train,]
+# test set
+ad_test <- advertising[-train,]
+```
+
+```{r}
+#Penalty matrix
+penalty.matrix <- matrix(c(0, 1, 10,0), byrow = TRUE, nrow = 2)
+#Building our model
+tree <- rpart(Clicked.on.Ad ~., data = ad_train, parms=list(loss=penalty.matrix), method = 'class')
+tree
+```
+```{r}
+#visualizing the tree
+rpart.plot(tree, nn=TRUE)
+```
+```{r}
+#making predictions with our model
+pred <- predict(object = tree, ad_test[,-6], type = 'class')
+#calculating accuracy
+t <- table(ad_test$Clicked.on.Ad, pred)
+confusionMatrix(t)
+```
+#8. Challenging the solution 
+
+### SVM
+```{r}
+library('caret')
+intrain <- createDataPartition(y = advertising$Clicked.on.Ad, p= 0.7, list = FALSE)
+training <- advertising[intrain,]
+testing <- advertising[-intrain,]
+dim(training)
+dim(testing)
+```
+```{r}
+#building our model
+# 
+trctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+svm_Linear <- train(Clicked.on.Ad ~., data = training, method = "svmLinear",
+trControl=trctrl,
+preProcess = c("center", "scale"),
+tuneLength = 10)
+svm_Linear
+```
+```{r}
+#making predictions
+test_pred <- predict(svm_Linear, newdata = testing)
+```
+```{r}
+#checking accuracy of model
+confusionMatrix(table(test_pred, testing$Clicked.on.Ad))
+```
+
+```{r}
+#Hyperparameter tuning
+grid <- expand.grid(C = c(0,0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2,5))
+svm_Linear_Grid <- train(Clicked.on.Ad ~., data = training, method = "svmLinear",
+trControl=trctrl,
+preProcess = c("center", "scale"),
+tuneGrid = grid,
+tuneLength = 10)
+svm_Linear_Grid
+plot(svm_Linear_Grid)
+```
+```{r}
+#Making predictions with the model after tuning.
+test_pred_grid <- predict(svm_Linear_Grid, newdata = testing)
+
+```
+```{r}
+#checking the accuracy
+confusionMatrix(table(test_pred_grid, testing$Clicked.on.Ad))
+```
+
+### Conclusion
+
+* The demographic of people who made the mot clicks were above 40 and had low daily internet usage as well as daily site usage. K means Clustering is a beneficial technique when carrying out this type of prediction.
+
+* Daily time spent on a site has a negative correlation on whether an individual clicks on an ad probably because they are already on the site and are aware of what the ad is about.
+
+* The model created using decission trees performs slightly better with an accuracy of 95.7% than the one created using SVM which has an accuracy of 95.6%.
+
+* Hyperparameter tuning doesn't do much in improving the svm model performance.
+
+* We achieved our metric of success since both our models achieved an accuracy score of above 85%.
+
+
+
+### Recommendations
+
+* Ads that are more appealing could be created so as to increase the ad clicks from men.
+
+*  We recommend the use of the SVM model in making predictions as it achieved the highest accuracy score of 95.6%.
+
+##9. Follow up questions
+
+###a) Did we have the right data?
+``` Yes we did. Our data set had a good number of variables that helped us study the individuals and determine who was likely to click on an ad.```
+
+###b) Do we need other data to answer our question?
+``` No, however further research is needed to help gain deeper insight on the same```
+
+###c) Did we have the right question?
+```The question was to create a model that accurately predicted whether an individual was most likely to click on an ad. We were able to do that by analysing the given dataset o yes we did have the right question.```
