@@ -1,4 +1,4 @@
-# IP-week13
+# Click-through Rate Prediction
 The project employs Supervised and Unsupervised Learning using R. This repositiry contains my Markdown submission files. They are divided into part 1 and part 2. 
 
 <br>
